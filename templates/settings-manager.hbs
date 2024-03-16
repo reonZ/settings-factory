@@ -1,0 +1,17 @@
+<div class="settings-manager flexrow" data-tooltip-direction="UP">
+    <aside class="sidebar flexcol">
+        <nav class="tabs">
+            <a class="item category-tab category-all active" data-tab="client-storages">
+                {{i18n 'client-storages.title'}}
+            </a>
+        </nav>
+        <button data-action="return-to-settings" type="button">
+            <i class="fa-solid fa-cogs"></i>
+            {{localize 'SETTINGS.Configure'}}
+        </button>
+    </aside>
+
+    <div class="settings-manager-content categories flexcol">
+        {{> settings-factory-client-storages i18n=(i18n.sub 'client-storages')}}
+    </div>
+</div>

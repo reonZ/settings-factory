@@ -1,0 +1,19 @@
+{
+    "name": "settings-factory",
+    "description": "",
+    "main": "scripts/main.js",
+    "scripts": {
+        "build": "esbuild src/main.ts --bundle --keep-names --minify --sourcemap --outdir=scripts",
+        "dev": "esbuild src/main.ts --bundle --keep-names --watch --sourcemap --outdir=scripts"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "esbuild": "^0.20.1",
+        "typescript": "^5.3.3"
+    },
+    "dependencies": {
+        "foundry-api": "file:../../../../dev/foundry-api"
+    }
+}

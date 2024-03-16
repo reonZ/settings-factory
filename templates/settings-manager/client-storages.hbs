@@ -1,0 +1,57 @@
+<section class="tab active" data-tab="client-storages">
+    <h2>{{i18n 'title'}}</h2>
+
+    <div class="storage-creation">
+        <label>
+            <span>{{i18n 'create.name'}}</span>
+            <input type="text" name="storage-creation-name">
+        </label>
+        <div class="buttons">
+            <label>
+                <input type="radio" name="storage-creation-type" value="copy" checked>
+                <span>{{i18n 'create.copy'}}</span>
+            </label>
+            <label>
+                <input type="radio" name="storage-creation-type" value="blank">
+                <span>{{i18n 'create.blank'}}</span>
+            </label>
+            <button type="button" data-action="create-storage">
+                {{i18n 'create.button'}}
+            </button>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="storages">
+        {{#each @root.storages as |storage|}}
+        <div class="storage{{#if (eq storage.id @root.storageId)}} active{{/if}}"
+            data-storage-id="{{storage.id}}">
+            <div class="storage-name">
+                <i class="fa-solid fa-caret-right"></i>
+                <span>{{storage.name}}</span>
+            </div>
+            <div class="storage-actions">
+                {{#if (eq storage.id @root.storageId)}}
+                <a data-action="unlink-storage" data-tooltip="{{../i18n.path 'list.unlink'}}">
+                    <i class="fa-solid fa-link-simple-slash"></i>
+                </a>
+                {{else}}
+                <a data-action="import-settings" data-tooltip="{{../i18n.path 'list.import'}}">
+                    <i class="fa-solid fa-download"></i>
+                </a>
+                {{/if}}
+                <a data-action="edit-storage" data-tooltip="{{../i18n.path 'list.edit'}}">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                </a>
+                <a data-action="clone-storage" data-tooltip="{{../i18n.path 'list.clone'}}">
+                    <i class="fa-solid fa-clone"></i>
+                </a>
+                <a data-action="delete-storage" data-tooltip="{{../i18n.path 'list.delete'}}">
+                    <i class="fa-solid fa-trash"></i>
+                </a>
+            </div>
+        </div>
+        {{/each}}
+    </div>
+</section>

@@ -1,0 +1,40 @@
+#client-settings {
+    aside.sidebar {
+        button {
+            flex: 0;
+            margin-right: 0.5rem;
+
+            &:not(:last-child) {
+                margin-bottom: 3px;
+            }
+        }
+    }
+
+    .window-content {
+        &.alternate {
+            > :first-child {
+                display: none;
+            }
+        }
+
+        &:not(.alternate) {
+            .settings-manager {
+                display: none;
+            }
+        }
+
+        > :first-child {
+            .categories {
+                .form-group {
+                    > label {
+                        > span {
+                            > span {
+                                margin-right: 0.2em;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

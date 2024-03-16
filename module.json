@@ -1,0 +1,44 @@
+{
+    "id": "settings-factory",
+    "title": "Settings Factory",
+    "author": "Idle",
+    "description": "",
+    "authors": [
+        {
+            "name": "Idle",
+            "discord": "Idle#3251"
+        }
+    ],
+    "esmodules": ["scripts/main.js"],
+    "compatibility": {
+        "minimum": "11.315",
+        "verified": "11"
+    },
+    "library": true,
+    "socket": true,
+    "version": "1.0.0",
+    "manifestPlusVersion": "1.2.0",
+    "url": "https://github.com/reonZ/settings-factory",
+    "readme": "https://github.com/reonZ/settings-factory/blob/master/README.md",
+    "manifest": "https://raw.githubusercontent.com/reonZ/settings-factory/master/module.json",
+    "download": "https://github.com/reonZ/settings-factory/releases/download/1.0.0/module.zip",
+    "changelog": "https://github.com/reonZ/settings-factory/blob/master/CHANGELOG.md",
+    "bugs": "https://github.com/reonZ/settings-factory/issues",
+    "styles": ["styles/settings-factory.css"],
+    "relationships": {
+        "requires": [
+            {
+                "id": "lib-wrapper",
+                "type": "module",
+                "manifest": "https://raw.githubusercontent.com/ruipin/fvtt-lib-wrapper/master/module.json"
+            }
+        ]
+    },
+    "languages": [
+        {
+            "lang": "en",
+            "name": "English",
+            "path": "lang/en.json"
+        }
+    ]
+}

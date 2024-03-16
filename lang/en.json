@@ -1,0 +1,62 @@
+{
+    "settings-factory": {
+        "config-app": {
+            "scope": {
+                "world": "World Setting",
+                "client": {
+                    "client": "Client Setting",
+                    "persistent": "Client Setting (Not Persistent)",
+                    "locked": "Client Setting (Locked)",
+                    "unlocked": "Client Setting (Unlocked)"
+                }
+            },
+            "button": "Settings Manager",
+
+            "manager": {
+                "client-storages": {
+                    "title": "Client Storages",
+                    "create": {
+                        "blank": "With default settings",
+                        "copy": "With current settings",
+                        "button": "Create New Storage",
+                        "name": "Storage Name"
+                    },
+                    "list": {
+                        "clone": "Duplicate Storage",
+                        "delete": "Delete Storage",
+                        "import": "Import Settings From Storage",
+                        "unlink": "Unlink Storage",
+                        "edit": "Edit Storage"
+                    }
+                }
+            }
+        },
+
+        "delete": {
+            "title": "Delete Persistent Storage",
+            "content": "Are you sure you want to delete the persistent storage?"
+        },
+
+        "edit": {
+            "title": "Edit Persistent Storage",
+            "cancel": "Cancel",
+            "edit": "Edit Storage",
+            "name": "Storage Name"
+        },
+
+        "import": {
+            "title": "Import Persistent Storage",
+            "select": "Importing <strong>{name}</strong>",
+            "regular": {
+                "label": "Soft Import",
+                "hint": "Will only change settings that were saved in the persistent storage."
+            },
+            "strict": {
+                "label": "Strict Import",
+                "hint": "Will import the saved settings and reset the other ones to their default values."
+            },
+            "import": "Import",
+            "cancel": "Cancel"
+        }
+    }
+}
