@@ -1,54 +1,241 @@
-import { isClientSetting, isMenuSetting, updateFlag } from "foundry-api";
-import { getFactoryStorage, getFactoryUnlocked, setFactoryUnlocked } from "./client-storages";
+import {
+    MODULE,
+    isClientSetting,
+    isMenuSetting,
+    mapValues,
+    setFlag,
+    updateFlag,
+} from "foundry-api";
 
-function getSettingId(setting: FactorySetting) {
-    return `${setting.namespace}.${setting.key}`;
+const factoryCache: FactoryCache = {
+    storageId: "",
+    unlocked: {},
+    storages: {},
+    storage: null,
+};
+
+function defaultStorageName(storageId: string) {
+    return `Storage-${storageId}`;
 }
 
-function getStorageValue(storage: FactoryStorage, settingId: string) {
-    return getProperty<string>(storage.settings, settingId) ?? null;
+export function isSharedStorage() {
+    return factoryCache.storage?.isShared ?? null;
 }
 
-function isValidSetting(setting: FactorySettingAny): setting is FactorySetting {
-    return !isMenuSetting(setting) && isClientSetting(setting);
+export function getFactoryStorage(storageId: string = factoryCache.storageId) {
+    return storageId === factoryCache.storageId
+        ? factoryCache.storage
+        : factoryCache.storages[storageId] ?? null;
 }
 
-export function isSettingEditable(setting: FactorySettingAny) {
-    if (!isValidSetting(setting)) return null;
-
-    const storage = getFactoryStorage();
-    if (!storage) return null;
-
-    const unlocked = isSettingUnlocked(setting);
-    return unlocked === true || !storage.isShared;
+export function getFactoryStorageId() {
+    return factoryCache.storageId || null;
 }
 
-export function isSettingUnlocked(setting: FactorySettingAny) {
-    if (!isValidSetting(setting)) return null;
+export function getFactoryStorages() {
+    return factoryCache.storages;
+}
 
-    const storage = getFactoryStorage();
-    if (!storage) return null;
+export function initClientStorage() {
+    const userId = game.data.userId;
+    const user = game.data.users.find((u) => u._id === userId)!;
+    const factoryFlag = getProperty<UserFactoryFlag>(user, `flags.${MODULE.id}`) ?? {};
 
-    const settingId = getSettingId(setting);
-    const inStorage = getStorageValue(storage, settingId);
+    factoryCache.storages = mapValues(
+        factoryFlag.storages ?? {},
+        ({ id, isShared, name, settings }) => ({
+            id,
+            name,
+            isShared,
+            settings: flattenObject(settings),
+        })
+    );
+
+    if (!factoryFlag.storageId) {
+        return;
+    }
+
+    // TODO get storage from shared if required
+    const storage = factoryCache.storages[factoryFlag.storageId];
+
+    if (!storage) {
+        return;
+    }
+
+    factoryCache.storageId = factoryFlag.storageId;
+    factoryCache.storage = deepClone(storage);
+    factoryCache.unlocked = deepClone(factoryFlag.unlocked ?? {});
+}
+
+export function addFactoryStorage(data: FactoryStorageOptions) {
+    const storageId = randomID();
+
+    const storageData: FactoryCachedStorage = {
+        id: storageId,
+        name: data.name?.trim() || defaultStorageName(storageId),
+        settings: deepClone(data.settings),
+        isShared: data.isShared ?? false,
+    };
+
+    factoryCache.storages[storageId] = storageData;
+    setFlag(game.user, "storages", storageId, storageData);
+}
+
+export function editFactoryStorageName(storageId: string, name: string) {
+    const storage = getFactoryStorage(storageId);
+
+    if (!storage) {
+        return false;
+    }
+
+    storage.name = name.trim() || defaultStorageName(storageId);
+    setFlag(game.user, "storages", storageId, "name", name);
+
+    return true;
+}
+
+export function deleteFactoryStorage(storageId: string) {
+    if (!getFactoryStorage(storageId)) {
+        return false;
+    }
+
+    const updates: UpdatableFactoryFlag = {
+        storages: {
+            [`-=${storageId}`]: true,
+        },
+    };
+
+    if (factoryCache.storageId === storageId) {
+        factoryCache.storageId = "";
+        factoryCache.unlocked = {};
+        factoryCache.storage = null;
+
+        updates[`-=storageId`] = true;
+        updates[`-=unlocked`] = true;
+    }
+
+    delete factoryCache.storages[storageId];
+    updateFlag(game.user, updates);
+
+    return true;
+}
+
+export function unlinkFactoryStorage() {
+    if (!factoryCache.storage) {
+        return false;
+    }
+
+    factoryCache.storageId = "";
+    factoryCache.unlocked = {};
+    factoryCache.storage = null;
+
+    updateFlag<UpdatableFactoryFlag>(game.user, {
+        [`-=storageId`]: true,
+        [`-=unlocked`]: true,
+    });
+
+    return true;
+}
+
+export async function importFactoryStorage(storageId: string, strict: boolean) {
+    if (storageId === factoryCache.storageId) {
+        return false;
+    }
+
+    const storage = getFactoryStorage(storageId);
+    if (!storage) {
+        return false;
+    }
+
+    const changes: { key: string; setting: FactorySetting; value: string }[] = [];
+    const settings = game.settings.settings.entries() as IterableIterator<[string, FactorySetting]>;
+
+    for (const [key, setting] of settings) {
+        if (setting.scope === "world" || setting.persistent === false) {
+            continue;
+        }
+
+        const value = storage.settings[key] ?? null;
+        const current = window.localStorage.getItem(key);
+
+        if (value === current) {
+            continue;
+        }
+
+        if (strict && value === null) {
+            const defaultValue = JSON.stringify(setting.default);
+            if (current !== defaultValue) {
+                changes.push({ key, setting, value: defaultValue });
+            }
+            continue;
+        }
+
+        if (value !== null) {
+            changes.push({ key, setting, value });
+        }
+    }
+
+    factoryCache.storageId = storageId;
+    factoryCache.unlocked = {};
+    factoryCache.storage = storage;
+
+    let requiresReload = false;
+
+    for (const { key, setting, value } of changes) {
+        requiresReload ||= !!setting.requiresReload;
+        window.localStorage.setItem(key, value);
+        settingChanged(setting, key, value);
+    }
+
+    const updates: UpdatableFactoryFlag = {
+        storageId,
+        "-=unlocked": true,
+    };
+
+    if (requiresReload) {
+        await updateFlag(game.user, updates);
+        SettingsConfig.reloadConfirm({ world: false });
+    } else {
+        updateFlag(game.user, updates);
+    }
+
+    return true;
+}
+
+export function isSettingUnlocked(settingId: string) {
+    if (!factoryCache.storage) {
+        return null;
+    }
+
+    const inStorage = factoryCache.storage.settings[settingId] ?? null;
+
     if (inStorage !== window.localStorage.getItem(settingId)) {
         return true;
     }
 
-    return getFactoryUnlocked(settingId) === true;
+    return factoryCache.unlocked[settingId] === true;
 }
 
-// TODO handle isShared
-export function setSettingUnlocked(setting: FactorySettingAny, unlocked?: boolean) {
-    if (!isValidSetting(setting)) return null;
+function settingChanged(setting: ClientSetting, key: string, value: string) {
+    if (setting.onChange instanceof Function) {
+        const parsed = new Setting({ key, value }).value;
+        setting.onChange(parsed);
+    }
+}
 
-    const storage = getFactoryStorage();
-    if (!storage) return null;
+export async function setSettingUnlocked(settingId: string, unlocked?: boolean) {
+    const storage = factoryCache.storage;
 
-    const settingId = getSettingId(setting);
-    const storedUnlocked = isSettingUnlocked(setting);
+    if (!storage) {
+        return null;
+    }
+
+    const storedUnlocked = isSettingUnlocked(settingId);
     const setUnlocked = unlocked ?? !storedUnlocked;
-    if (setUnlocked === storedUnlocked) return false;
+
+    if (setUnlocked === storedUnlocked) {
+        return false;
+    }
 
     const updates: UpdatableFactoryFlag = {
         unlocked: {
@@ -56,146 +243,119 @@ export function setSettingUnlocked(setting: FactorySettingAny, unlocked?: boolea
         },
     };
 
+    let requiresReload = false;
+
     if (!setUnlocked) {
-        const currentValue = window.localStorage.getItem(settingId);
-        const hasCurrentValue = currentValue != null;
-
         if (storage.isShared) {
-            // TODO change current value
-        } else {
-            const settingIdKey = hasCurrentValue ? settingId : `-=${settingId}`;
+            const setting = game.settings.settings.get(settingId)!;
+            const value = storage.settings[settingId];
 
-            if (hasCurrentValue) {
-                storage.settings[settingId] = currentValue;
+            if (value == null) {
+                window.localStorage.removeItem(settingId);
             } else {
+                window.localStorage.setItem(settingId, value);
+            }
+
+            settingChanged(setting, settingId, value);
+
+            requiresReload ||= !!setting.requiresReload;
+        } else {
+            const currentValue = window.localStorage.getItem(settingId);
+            const settings: UpdatableStorageSettings = {};
+
+            if (currentValue == null) {
                 delete storage.settings[settingId];
+                settings[`-=${settingId}`] = true;
+            } else {
+                storage.settings[settingId] = currentValue;
+                settings[settingId] = currentValue;
             }
 
             updates.storages = {
                 [storage.id]: {
-                    settings: {
-                        [settingIdKey]: currentValue ?? true,
-                    },
+                    settings,
                 },
             };
         }
     }
 
-    setFactoryUnlocked(settingId, setUnlocked);
-    updateFlag(game.user, updates);
+    factoryCache.unlocked[settingId] = setUnlocked;
+
+    if (requiresReload) {
+        await updateFlag(game.user, updates);
+        SettingsConfig.reloadConfirm({ world: false });
+    } else {
+        updateFlag(game.user, updates);
+    }
 
     return setUnlocked;
 }
 
-// function wrapClientStorage() {
-//     const base = {
-//         get length() {
-//             return window.localStorage.length;
-//         },
-//         getItem(key: string) {
-//             return window.localStorage.getItem(key);
-//         },
-//         setItem(key: string, value: string) {
-//             window.localStorage.setItem(key, value);
-//         },
-//         clear() {
-//             window.localStorage.clear();
-//         },
-//         key(index: number) {
-//             return window.localStorage.key(index);
-//         },
-//         removeItem(key: string) {
-//             window.localStorage.removeItem(key);
-//         },
-//     };
+export function wrapClientStorage() {
+    const base = {
+        get length() {
+            return window.localStorage.length;
+        },
+        getItem(key: string) {
+            return window.localStorage.getItem(key);
+        },
+        setItem(key: string, value: string) {
+            const storage = factoryCache.storage;
 
-//     const proxyHandler: ProxyHandler<typeof base> = {
-//         get(target, prop, receiver) {
-//             if (
-//                 typeof prop === "symbol" ||
-//                 ["length", "getItem", "setItem", "clear", "key", "removeItem"].includes(prop)
-//             ) {
-//                 return Reflect.get(target, prop, receiver);
-//             }
-//             return window.localStorage[prop];
-//         },
-//         has(target, key) {
-//             return key in window.localStorage;
-//         },
-//     };
+            if (!storage || isSettingUnlocked(key) === true) {
+                window.localStorage.setItem(key, value);
+                return;
+            }
 
-//     const storage = new Proxy(base, proxyHandler);
+            const updates: UpdatableFactoryFlag = {};
 
-//     game.settings.storage.set("client", storage);
-// }
+            if (storage.isShared) {
+                factoryCache.unlocked[key] = true;
+                updates.unlocked = {
+                    [key]: true,
+                };
+            } else {
+                storage.settings[key] = value;
+                updates.storages = {
+                    [storage.id]: {
+                        settings: {
+                            [key]: value,
+                        },
+                    },
+                };
+            }
 
-// export async function clientSettingsSet(
-//     this: ClientSettings,
-//     namespace: string,
-//     key: string,
-//     value: any,
-//     options: any = {}
-// ) {
-//     if (!namespace || !key) {
-//         throw new Error("You must specify both namespace and key portions of the setting");
-//     }
+            updateFlag(game.user, updates);
 
-//     key = `${namespace}.${key}`;
-//     if (!this.settings.has(key)) {
-//         throw new Error("This is not a registered game setting");
-//     }
+            window.localStorage.setItem(key, value);
+        },
+        clear() {
+            window.localStorage.clear();
+        },
+        key(index: number) {
+            return window.localStorage.key(index);
+        },
+        removeItem(key: string) {
+            window.localStorage.removeItem(key);
+        },
+    };
 
-//     // Obtain the setting data and serialize the value
-//     const setting = this.settings.get(key);
-//     if (value === undefined) value = setting.default;
-//     if (foundry.utils.isSubclass(setting.type, foundry.abstract.DataModel)) {
-//         value = setting.type.fromSource(value, { strict: true });
-//     }
+    const proxyHandler: ProxyHandler<typeof base> = {
+        get(target, prop, receiver) {
+            if (
+                typeof prop === "symbol" ||
+                ["length", "getItem", "setItem", "clear", "key", "removeItem"].includes(prop)
+            ) {
+                return Reflect.get(target, prop, receiver);
+            }
+            return window.localStorage[prop];
+        },
+        has(target, key) {
+            return key in window.localStorage;
+        },
+    };
 
-//     // Save the setting change
-//     if (setting.scope === "world") await setWorld.call(this, key, value, options);
-//     else await setClient.call(this, key, value, setting.onChange);
-//     return value;
-// }
+    const storage = new Proxy(base, proxyHandler);
 
-// async function setWorld(this: ClientSettings, key: string, value: any, options: any) {
-//     if (!game.ready) {
-//         throw new Error("You may not set a World-level Setting before the Game is ready.");
-//     }
-
-//     const current = this.storage.get("world").getSetting(key);
-//     const json = JSON.stringify(value);
-
-//     if (current) return current.update({ value: json }, options);
-//     else return Setting.create({ key, value: json }, options);
-// }
-
-// async function setClient(
-//     this: ClientSettings,
-//     key: string,
-//     value: any,
-//     onChange: ClientSetting["onChange"] | undefined
-// ) {
-//     const storage = this.storage.get("client");
-//     const json = JSON.stringify(value);
-
-//     let setting;
-
-//     if (key in storage) {
-//         setting = new Setting({ key, value: storage.getItem(key) });
-//         const diff = setting.updateSource({ value: json });
-//         if (foundry.utils.isEmpty(diff)) return setting;
-//     } else {
-//         setting = new Setting({ key, value: json });
-//     }
-
-//     // TODO save to factory storage if not unlocked
-
-//     storage.setItem(key, json);
-
-//     if (onChange instanceof Function) {
-//         onChange(value);
-//     }
-
-//     return setting;
-// }
+    game.settings.storage.set("client", storage);
+}

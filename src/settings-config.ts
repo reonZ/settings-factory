@@ -18,12 +18,14 @@ import {
     templatePath,
     type libWrapper,
 } from "foundry-api";
-import { isSettingEditable, isSettingUnlocked, setSettingUnlocked } from "./client-settings";
 import {
-    clientStoragesListeners,
     getFactoryStorageId,
     getFactoryStorages,
-} from "./client-storages";
+    isSettingUnlocked,
+    isSharedStorage,
+    setSettingUnlocked,
+} from "./client-settings";
+import { clientStoragesListeners } from "./client-storages";
 
 const localize = subLocalize("config-app");
 
@@ -140,7 +142,10 @@ export function settingsConfigActivateListeners(
     for (const setting of settings) {
         const settingId = `${setting.namespace}.${setting.key}`;
         const settingEl = html.querySelector(`.form-group[data-setting-id="${settingId}"]`);
-        if (!settingEl) continue;
+
+        if (!settingEl) {
+            continue;
+        }
 
         const saveOnInput = setting.saveOnInput && !setting.requiresReload;
         const onInput = typeof setting.onInput === "function" && setting.onInput;
@@ -172,8 +177,11 @@ export function settingsConfigActivateListeners(
         }
 
         addListener(settingEl, ":scope > label > a", async (event, el) => {
-            const unlocked = setSettingUnlocked(setting);
-            if (unlocked === null) return;
+            const unlocked = await setSettingUnlocked(settingId);
+
+            if (unlocked === null) {
+                return;
+            }
 
             const icon = unlocked ? ICONS.unlocked : ICONS.locked;
             const iconEl = createIcon(icon);
@@ -210,12 +218,15 @@ function settingValue(
     const dtype = el.dataset.dtype ?? (type === "number" ? "Number" : "String");
 
     switch (dtype) {
-        case "Number":
+        case "Number": {
             return Number(value);
-        case "Boolean":
+        }
+        case "Boolean": {
             return value === "false" ? false : value;
-        default:
+        }
+        default: {
             return value;
+        }
     }
 }
 
@@ -258,12 +269,10 @@ function manipulateHTML(
             });
 
             const isMenu = isMenuSetting(setting);
-            const isWorld = isWorldSetting(setting);
-            const unlocked = isSettingUnlocked(setting);
-            const editable = isSettingEditable(setting);
+            const unlocked = isMenu ? null : isSettingUnlocked(setting.id);
             const persistent = isMenu || setting.persistent !== false;
 
-            const icon = isWorld
+            const icon = isWorldSetting(setting)
                 ? ICONS.world
                 : !persistent
                 ? ICONS.persistent
@@ -282,7 +291,7 @@ function manipulateHTML(
                 replaceEl.append(" ", name);
             }
 
-            if (editable === false) {
+            if (unlocked === false && isSharedStorage() === true) {
                 const inputEl = querySelector<HTMLInputElement | HTMLSelectElement>(
                     el,
                     "input, select"

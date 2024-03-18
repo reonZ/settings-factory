@@ -1,11 +1,12 @@
 import { MODULE, registerWrapper } from "foundry-api";
 import { settingsConfigActivateListeners, settingsConfigRenderInner } from "./settings-config";
-import { initClientStorage } from "./client-storages";
+import { initClientStorage, wrapClientStorage } from "./client-settings";
 
 MODULE.register("settings-factory", "Settings Factory");
 
 Hooks.on("init", () => {
     initClientStorage();
+    wrapClientStorage();
 
     registerWrapper("SettingsConfig.prototype._renderInner", settingsConfigRenderInner, "WRAPPER");
 

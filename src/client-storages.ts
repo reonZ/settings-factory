@@ -8,60 +8,18 @@ import {
     htmlElement,
     querySelector,
     querySelectorArray,
-    setFlag,
     subLocalize,
-    updateFlag,
     waitDialog,
 } from "foundry-api";
-
-const factoryCache: Required<UserFactoryFlag> & { storage: FactoryStorage | null } = {
-    storageId: "",
-    unlocked: {},
-    storages: {},
-    storage: null,
-};
-
-export function getFactoryStorageId() {
-    return factoryCache.storageId || null;
-}
-
-export function isSharedFactoryStorage() {}
-
-export function getFactoryStorage(storageId: string = factoryCache.storageId) {
-    return storageId === factoryCache.storageId
-        ? factoryCache.storage
-        : factoryCache.storages[storageId] ?? null;
-}
-
-export function getFactoryStorages() {
-    return factoryCache.storages;
-}
-
-export function getFactoryUnlocked(settingId: string) {
-    return factoryCache.storage ? factoryCache.unlocked[settingId] : null;
-}
-
-export function setFactoryUnlocked(settingId: string, unlocked: boolean) {
-    if (!factoryCache.storage) return;
-    factoryCache.unlocked[settingId] = unlocked;
-}
-
-export function initClientStorage() {
-    const userId = game.data.userId;
-    const user = game.data.users.find((u) => u._id === userId)!;
-    const factoryFlag = getProperty<UserFactoryFlag>(user, `flags.${MODULE.id}`) ?? {};
-
-    factoryCache.storages = deepClone(factoryFlag.storages ?? {});
-    if (!factoryFlag.storageId) return;
-
-    // TODO get storage from shared if required
-    const storage = factoryCache.storages[factoryCache.storageId];
-    if (!storage) return;
-
-    factoryCache.storageId = factoryFlag.storageId;
-    factoryCache.storage = deepClone(storage);
-    factoryCache.unlocked = deepClone(factoryFlag.unlocked ?? {});
-}
+import {
+    addFactoryStorage,
+    deleteFactoryStorage,
+    editFactoryStorageName,
+    getFactoryStorage,
+    getFactoryStorageId,
+    importFactoryStorage,
+    unlinkFactoryStorage,
+} from "./client-settings";
 
 export function clientStoragesListeners(html: Element, app: FormApplication) {
     const createNameEl = querySelector<HTMLInputElement>(html, "[name='storage-creation-name']");
@@ -82,7 +40,7 @@ export function clientStoragesListeners(html: Element, app: FormApplication) {
         ["edit-storage", editPersistentStorage],
         ["delete-storage", deletePersistentStorage],
         ["import-settings", importPersistentStorage],
-        ["import-settings", unlinkStorage],
+        ["unlink-storage", unlinkFactoryStorage],
     ] as const;
     for (const [action, callback] of actions) {
         addListenerAll(html, `[data-action="${action}"]`, async (_, el) => {
@@ -94,17 +52,11 @@ export function clientStoragesListeners(html: Element, app: FormApplication) {
     }
 }
 
-function defaultStorageName(storageId: string) {
-    return `Storage-${storageId}`;
-}
-
 function createPersistentStorage(name: string, isShared: boolean, copy = false) {
-    const storageId = randomID();
-    const data: FactoryStorage = {
-        id: storageId,
-        name: name.trim() || defaultStorageName(storageId),
-        settings: {},
+    const data: FactoryStorageOptions = {
+        name: name,
         isShared,
+        settings: {},
     };
 
     if (copy) {
@@ -112,47 +64,49 @@ function createPersistentStorage(name: string, isShared: boolean, copy = false) 
             [string, FactorySetting]
         >;
         for (const [key, setting] of settings) {
-            if (setting.scope === "world" || setting.persistent === false) continue;
+            if (setting.scope === "world" || setting.persistent === false) {
+                continue;
+            }
 
             const value = window.localStorage.getItem(key);
-            if (value === null) continue;
+
+            if (value === null) {
+                continue;
+            }
 
             data.settings[key] = value;
         }
     }
 
-    factoryCache.storages[storageId] = data;
-    setFlag(game.user, "storages", storageId, data);
+    addFactoryStorage(data);
 }
 
-function clonePersistentStorage(otherId: string) {
-    const storage = getFactoryStorage(otherId);
-    const storageId = randomID();
-    const data: FactoryStorage = {
-        id: storageId,
-        name: defaultStorageName(storageId),
+function clonePersistentStorage(storageId: string) {
+    const storage = getFactoryStorage(storageId);
+    const data: FactoryStorageOptions = {
         settings: {},
-        isShared: false,
     };
 
     if (storage) {
         data.name = game.i18n.format("DOCUMENT.CopyOf", { name: storage.name });
-        data.settings = deepClone(storage.settings);
+        data.settings = storage.settings;
     }
 
-    factoryCache.storages[storageId] = data;
-    setFlag(game.user, "storages", storageId, data);
+    addFactoryStorage(data);
 
     return true;
 }
 
 async function editPersistentStorage(storageId: string) {
     const storage = getFactoryStorage(storageId);
-    if (!storage) return false;
+
+    if (!storage) {
+        return false;
+    }
 
     const localize = subLocalize("edit");
 
-    const data = await waitDialog<FactoryStorageOptions>({
+    const data = await waitDialog<Pick<FactoryStorage, "name">>({
         title: localize("title"),
         template: "dialogs/edit",
         yes: {
@@ -168,25 +122,23 @@ async function editPersistentStorage(storageId: string) {
         data: {
             i18n: localize.i18n,
             storage,
-            namePlaceholder: defaultStorageName(storageId),
         },
         id: MODULE.path("edit-storage", storageId),
     });
 
-    if (!data) return false;
+    if (!data) {
+        return false;
+    }
 
-    const name = data.name.trim() || defaultStorageName(storageId);
-    if (name === storage.name) return false;
-
-    storage.name = name;
-    setFlag(game.user, "storages", storageId, "name", name);
-
-    return true;
+    return editFactoryStorageName(storageId, data.name);
 }
 
 async function deletePersistentStorage(storageId: string) {
     const storage = getFactoryStorage(storageId);
-    if (!storage) return false;
+
+    if (!storage) {
+        return false;
+    }
 
     const localize = subLocalize("delete");
 
@@ -200,34 +152,23 @@ async function deletePersistentStorage(storageId: string) {
         id: MODULE.path("delete-storage", storageId),
     });
 
-    if (!confirm) return false;
-
-    const updates: UpdatableFactoryFlag = {
-        storages: {
-            [`-=${storageId}`]: true,
-        },
-    };
-
-    if (factoryCache.storageId === storageId) {
-        factoryCache.storageId = "";
-        factoryCache.unlocked = {};
-        factoryCache.storage = null;
-
-        updates[`-=storageId`] = true;
-        updates[`-=unlocked`] = true;
+    if (!confirm) {
+        return false;
     }
 
-    delete factoryCache.storages[storageId];
-    updateFlag(game.user, updates);
-
-    return true;
+    return deleteFactoryStorage(storageId);
 }
 
 async function importPersistentStorage(storageId: string) {
-    if (storageId === factoryCache.storageId) return false;
+    if (storageId === getFactoryStorageId()) {
+        return false;
+    }
 
     const storage = getFactoryStorage(storageId);
-    if (!storage) return false;
+
+    if (!storage) {
+        return false;
+    }
 
     const localize = subLocalize("import");
 
@@ -253,69 +194,9 @@ async function importPersistentStorage(storageId: string) {
         id: MODULE.path("import-storage"),
     });
 
-    if (strict === null) return false;
-
-    factoryCache.storageId = storageId;
-    factoryCache.unlocked = {};
-    factoryCache.storage = storage;
-
-    const updates: UpdatableFactoryFlag = {
-        storageId,
-        "-=unlocked": true,
-    };
-
-    const changes: { key: string; setting: FactorySetting; value: string }[] = [];
-    const storageEntries = flattenObject(storage.settings);
-    const settings = game.settings.settings.entries() as IterableIterator<[string, FactorySetting]>;
-
-    for (const [key, setting] of settings) {
-        if (setting.scope === "world" || setting.persistent === false) continue;
-
-        const value = storageEntries[key] ?? null;
-        const current = window.localStorage.getItem(key);
-        if (value === current) continue;
-
-        if (strict && value === null) {
-            const defaultValue = JSON.stringify(setting.default);
-            if (current !== defaultValue) {
-                changes.push({ key, setting, value: defaultValue });
-            }
-            continue;
-        }
-
-        if (value !== null) {
-            changes.push({ key, setting, value });
-        }
+    if (strict === null) {
+        return false;
     }
 
-    let requiresReload = false;
-
-    for (const { key, setting, value } of changes) {
-        requiresReload ||= !!setting.requiresReload;
-        // window.localStorage.setItem(key, value);
-        // if (!(setting.onChange instanceof Function)) continue;
-        // const parsed = new Setting({ key: key, value }).value;
-        // setting.onChange(parsed);
-    }
-
-    updateFlag(game.user, updates);
-
-    if (requiresReload) {
-        SettingsConfig.reloadConfirm({ world: false });
-    }
-
-    return true;
-}
-
-function unlinkStorage() {
-    factoryCache.storageId = "";
-    factoryCache.unlocked = {};
-    factoryCache.storage = null;
-
-    updateFlag<UpdatableFactoryFlag>(game.user, {
-        [`-=storageId`]: true,
-        [`-=unlocked`]: true,
-    });
-
-    return true;
+    return importFactoryStorage(storageId, strict);
 }

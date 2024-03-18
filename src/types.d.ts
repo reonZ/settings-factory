@@ -7,12 +7,16 @@ declare type SettingsGroup = {
     name: string | undefined;
     hasOnlyWorld?: boolean;
     hasOnlyClient?: boolean;
-    settings: FactorySettingAny[];
+    settings: (FactorySetting | FactorySettingMenu)[];
 };
 
 declare type StorageSettingId = string | { namespace: string; key: string };
 
 declare type StorageSettings = CyclicRecord<string>;
+
+declare type UpdatableStorageSettings = {
+    [k: string]: string | true;
+};
 
 declare type FactoryStorage = {
     id: string;
@@ -21,12 +25,23 @@ declare type FactoryStorage = {
     isShared: boolean;
 };
 
-declare type FactoryStorageOptions = Pick<FactoryStorage, "name">;
+declare type FactoryCachedStorage = Omit<FactoryStorage, "settings"> & {
+    settings: Record<string, string>;
+};
+
+declare type FactoryStorageOptions = Partial<Pick<FactoryStorage, "name" | "isShared">> & {
+    settings: Record<string, string>;
+};
 
 declare type UserFactoryFlag = {
     storageId?: string;
     storages?: Record<string, FactoryStorage>;
     unlocked?: Record<string, boolean>;
+};
+
+declare type FactoryCache = Required<Omit<UserFactoryFlag, "storages">> & {
+    storages: Record<string, FactoryCachedStorage>;
+    storage: FactoryCachedStorage | null;
 };
 
 declare type UpdatableFactoryFlag = Omit<UserFactoryFlag, "storages"> & {
@@ -36,9 +51,7 @@ declare type UpdatableFactoryFlag = Omit<UserFactoryFlag, "storages"> & {
         [k: string]:
             | true
             | (Omit<Partial<FactoryStorage>, "settings"> & {
-                  settings?: {
-                      [k: string]: string | true | CyclicRecord<string | true>;
-                  };
+                  settings?: UpdatableStorageSettings;
               });
     };
 };
